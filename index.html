@@ -1,0 +1,1155 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>EMS救護車使用頻率檢索與紀錄系統 (行動與雲端同步版)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Noto+Sans+TC:wght@400;500;700;900&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        navy: { 800: '#1e293b', 900: '#0f172a', 950: '#090d16' },
+                        ems: { blue: '#0284c7', red: '#dc2626', amber: '#d97706' }
+                    },
+                    fontFamily: { sans: ['Inter', 'Noto Sans TC', 'sans-serif'] }
+                }
+            }
+        }
+    </script>
+    <style>
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: #f1f5f9; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 9999px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+        input, select, textarea { font-size: 16px !important; }
+        .tag-btn-selected { background-color: #ef4444 !important; color: white !important; border-color: #dc2626 !important; }
+        button, label, select, input { touch-action: manipulation; }
+    </style>
+</head>
+<body class="bg-slate-100 text-slate-800 font-sans min-h-screen flex flex-col selection:bg-blue-500 selection:text-white">
+
+    <header class="bg-navy-900 text-white border-b border-slate-800 sticky top-0 z-30 shadow-md">
+        <div class="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+            <div class="flex items-center space-x-2.5">
+                <div class="bg-ems-red text-white p-2 rounded-xl shadow-lg shadow-red-600/30 flex items-center justify-center w-9 h-9 shrink-0">
+                    <i class="fa-solid fa-truck-medical text-lg"></i>
+                </div>
+                <div>
+                    <h1 class="text-xs sm:text-base md:text-lg font-black tracking-wide text-white truncate max-w-[200px] sm:max-w-none">EMS 救護車使用頻率系統</h1>
+                    <p class="text-[10px] text-slate-400 hidden sm:block">Google Apps Script 雲端同步版</p>
+                </div>
+            </div>
+
+            <div class="flex items-center space-x-2">
+                <div id="cloudStatusBadge" class="px-2 py-1 bg-slate-800 text-slate-300 text-[11px] font-semibold rounded-xl border border-slate-700 flex items-center gap-1.5">
+                    <span class="w-2 h-2 rounded-full bg-amber-400 animate-pulse" id="cloudStatusDot"></span>
+                    <span id="cloudStatusText" class="hidden md:inline">連接 Google 雲端...</span>
+                </div>
+                <button type="button" onclick="exportData('csv')" class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 active:bg-slate-900 text-slate-200 text-xs sm:text-sm font-semibold rounded-xl border border-slate-700 transition flex items-center gap-1.5 shadow-xs cursor-pointer">
+                    <i class="fa-solid fa-file-csv text-emerald-400 text-sm"></i>
+                    <span class="hidden xs:inline">匯出報表</span>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <main class="flex-grow max-w-7xl w-full mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-6 space-y-5">
+
+        <section id="patientProfileTopSection" class="bg-navy-900 rounded-2xl p-4 sm:p-6 border border-slate-800 text-white shadow-xl space-y-4">
+            <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-3 pb-3 border-b border-slate-800">
+                <div class="space-y-0.5">
+                    <h2 class="font-black text-lg sm:text-xl text-white flex items-center gap-2">
+                        <i class="fa-solid fa-id-card-clip text-blue-400"></i>
+                        患者個案資料卡與快速檢索
+                    </h2>
+                    <p class="text-xs sm:text-sm text-slate-300">輸入身分證字號或姓名搜尋，手機與電腦即時同步。</p>
+                </div>
+
+                <div class="flex flex-col sm:flex-row items-center gap-2 w-full lg:w-auto">
+                    <div class="relative w-full sm:w-72 md:w-80 flex items-center">
+                        <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
+                            <i class="fa-solid fa-magnifying-glass text-sm"></i>
+                        </div>
+                        <input type="text" id="patientSelectInput" oninput="handlePatientDropdownSearch(this.value)" onfocus="showPatientDropdown()" placeholder="輸入身分證號或姓名..." 
+                            class="w-full pl-9 pr-9 py-2.5 bg-slate-800 border border-slate-700 rounded-xl text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm sm:text-base font-medium">
+                        
+                        <button type="button" onclick="clearPatientSelectInput()" id="clearSelectBtn" class="hidden absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-200 p-1 cursor-pointer">
+                            <i class="fa-solid fa-circle-xmark text-sm"></i>
+                        </button>
+
+                        <div id="patientDropdownList" class="hidden absolute left-0 right-0 top-full mt-1.5 bg-slate-800 border border-slate-700 rounded-xl shadow-2xl z-50 max-h-56 overflow-y-auto divide-y divide-slate-700/60">
+                        </div>
+                    </div>
+
+                    <div class="flex items-center gap-2 w-full sm:w-auto">
+                        <label class="flex-1 sm:flex-initial px-3.5 py-2.5 bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white font-bold rounded-xl text-xs sm:text-sm transition flex items-center justify-center gap-2 cursor-pointer shadow-md">
+                            <i class="fa-solid fa-camera-retro text-sm"></i>
+                            <span>拍攝證件</span>
+                            <input type="file" id="ocrCameraInput" accept="image/*" capture="environment" class="hidden" onchange="processOcrImage(event)">
+                        </label>
+                        <label class="flex-1 sm:flex-initial px-3.5 py-2.5 bg-slate-800 hover:bg-slate-700 active:bg-slate-900 text-slate-200 border border-slate-700 font-bold rounded-xl text-xs sm:text-sm transition flex items-center justify-center gap-2 cursor-pointer shadow-md">
+                            <i class="fa-solid fa-upload text-sm"></i>
+                            <span>上傳證件照</span>
+                            <input type="file" id="ocrFileInput" accept="image/*" class="hidden" onchange="processOcrImage(event)">
+                        </label>
+                    </div>
+                </div>
+            </div>
+
+            <div id="ocrStatus" class="hidden p-3 bg-blue-900/80 border border-blue-500/50 text-blue-200 text-xs rounded-xl flex items-center gap-3">
+                <i class="fa-solid fa-circle-notch fa-spin text-blue-400 text-base shrink-0"></i>
+                <span id="ocrStatusText" class="font-medium">正在進行證件字元辨識與檢索...</span>
+            </div>
+            <canvas id="preprocessCanvas" class="hidden"></canvas>
+
+            <div id="topPatientCard" class="bg-slate-800/90 border border-slate-700 rounded-xl p-4 sm:p-5 shadow-lg">
+                <div class="flex flex-col sm:flex-row items-center sm:items-start gap-4">
+                    
+                    <div class="flex flex-col items-center gap-2 shrink-0 w-full sm:w-auto">
+                        <div class="relative group w-28 h-36 sm:w-32 sm:h-44 rounded-xl bg-slate-950 border-2 border-blue-500/80 overflow-hidden flex items-center justify-center shadow-xl cursor-pointer" onclick="openPhotoPreviewModal()">
+                            <img id="topPhotoImg" class="w-full h-full object-cover hidden" alt="患者照片">
+                            <div id="topPhotoIconFallback" class="flex flex-col items-center justify-center text-slate-500 gap-1.5">
+                                <i class="fa-solid fa-user-tie text-4xl"></i>
+                                <span class="text-[11px] text-slate-400 font-medium">尚無大頭照</span>
+                            </div>
+                            <div class="absolute inset-0 bg-navy-950/80 opacity-0 group-hover:opacity-100 flex flex-col items-center justify-center transition text-white font-bold text-xs gap-1 backdrop-blur-xs">
+                                <i class="fa-solid fa-magnifying-glass-plus text-xl text-blue-400"></i>
+                                <span>放大比對</span>
+                            </div>
+                        </div>
+
+                        <div class="flex items-center justify-center gap-2 w-full text-xs">
+                            <button type="button" onclick="openPhotoPreviewModal()" class="text-blue-400 hover:text-blue-300 font-bold flex items-center gap-1 p-1 cursor-pointer">
+                                <i class="fa-solid fa-expand"></i> 放大
+                            </button>
+                            <span class="text-slate-600">|</span>
+                            <button type="button" onclick="document.getElementById('cardPhotoInput').click()" class="text-slate-300 hover:text-white font-bold flex items-center gap-1 p-1 cursor-pointer">
+                                <i class="fa-solid fa-upload"></i> 更換相片
+                            </button>
+                            <input type="file" id="cardPhotoInput" accept="image/*" capture="environment" class="hidden" onchange="previewCardPhoto(event)">
+                        </div>
+                    </div>
+
+                    <div class="flex-grow space-y-3.5 w-full">
+                        <div id="cardInlineAlertContainer" class="transition-all duration-300"></div>
+
+                        <div class="grid grid-cols-1 sm:grid-cols-12 gap-3 items-center">
+                            <div class="sm:col-span-5 flex items-center gap-2">
+                                <input type="text" id="cardPatientName" placeholder="填寫姓名" oninput="onCardDataChange()"
+                                    class="w-full px-3.5 py-2.5 bg-slate-900 border border-slate-700 rounded-xl text-lg sm:text-xl font-black text-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                <span id="newPatientBadge" class="hidden text-[11px] bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 px-2 py-0.5 rounded font-extrabold animate-pulse shrink-0">
+                                    新個案
+                                </span>
+                            </div>
+
+                            <div class="sm:col-span-3">
+                                <select id="cardPatientGender" onchange="onCardDataChange()" class="w-full px-3.5 py-2.5 bg-slate-900 border border-slate-700 rounded-xl text-base font-bold text-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                    <option value="男">男</option>
+                                    <option value="女">女</option>
+                                    <option value="其他">其他</option>
+                                </select>
+                            </div>
+
+                            <div class="sm:col-span-4">
+                                <input type="text" id="cardPatientId" placeholder="身分證號 / 編號" oninput="onCardIdInput(this.value)"
+                                    class="w-full px-3.5 py-2.5 bg-slate-950 border border-blue-700 rounded-xl text-base sm:text-lg font-mono font-bold text-blue-300 uppercase tracking-wider focus:outline-none focus:ring-2 focus:ring-blue-500">
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-base text-slate-300">
+                            <div class="bg-slate-900 px-3.5 py-2.5 rounded-xl border border-slate-700/60 flex items-center gap-2.5">
+                                <i class="fa-solid fa-cake-candles text-amber-400 text-xl shrink-0"></i>
+                                <span class="shrink-0 text-slate-300 font-bold text-sm sm:text-base">民國生日(6碼):</span>
+                                <input type="text" id="cardPatientDob" placeholder="800308" maxlength="6" oninput="onCardDataChange()"
+                                    class="w-full bg-transparent font-bold text-white text-base sm:text-lg focus:outline-none border-b border-dashed border-slate-600 focus:border-blue-400">
+                            </div>
+                            <div id="topRecordStats" class="bg-slate-900 px-3.5 py-2.5 rounded-xl border border-slate-700/60 flex items-center gap-2.5 text-blue-300 font-bold text-base sm:text-lg">
+                                <i class="fa-solid fa-truck-medical text-red-400 text-xl"></i>
+                                <span>歷史叫車: <strong id="topStatCount" class="text-white text-lg sm:text-xl">0 次</strong></span>
+                            </div>
+                        </div>
+
+                        <div class="pt-2 flex items-center justify-between border-t border-slate-700/60 text-xs">
+                            <span class="text-slate-400">
+                                <i class="fa-solid fa-circle-info text-blue-400 mr-1"></i>雲端資料庫多裝置即時同步
+                            </span>
+                            <div class="flex items-center gap-2">
+                                <button type="button" onclick="updatePatientProfileData()" class="px-2.5 py-1 bg-blue-600/30 hover:bg-blue-600/50 text-blue-300 text-xs font-bold rounded-lg border border-blue-500/40 transition flex items-center gap-1 cursor-pointer">
+                                    <i class="fa-solid fa-pen-to-square text-blue-400"></i>
+                                    <span>修改個案資料並儲存</span>
+                                </button>
+                                <button type="button" onclick="confirmDeletePatient()" class="px-2.5 py-1 bg-red-600/20 hover:bg-red-600/40 text-red-300 text-xs font-bold rounded-lg border border-red-500/40 transition flex items-center gap-1 cursor-pointer">
+                                    <i class="fa-solid fa-trash-can text-red-400"></i>
+                                    <span>刪除個案</span>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+
+            <div class="lg:col-span-7 space-y-5">
+                <section class="bg-white rounded-2xl p-4 sm:p-6 border border-slate-200 shadow-xs">
+                    <div class="flex items-center justify-between pb-3 mb-3.5 border-b border-slate-100">
+                        <h3 class="font-bold text-slate-900 flex items-center gap-2 text-base sm:text-lg">
+                            <i class="fa-solid fa-pen-to-square text-red-600 text-lg"></i>
+                            本次救護案件紀錄登打
+                        </h3>
+                    </div>
+
+                    <form id="recordForm" onsubmit="saveRecord(event)" class="space-y-3.5">
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            <div>
+                                <label class="block text-xs sm:text-sm font-bold text-slate-800 mb-1">出勤日期時間 <span class="text-red-500">*</span></label>
+                                <input type="datetime-local" id="useTime" required
+                                    class="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-base focus:ring-2 focus:ring-blue-500 focus:outline-none font-medium">
+                            </div>
+
+                            <div>
+                                <div class="flex items-center justify-between mb-1">
+                                    <label class="block text-xs sm:text-sm font-bold text-slate-800">送往醫院 (選填)</label>
+                                    <button type="button" onclick="openOptionEditorModal('hospital')" class="text-xs text-blue-600 hover:text-blue-800 font-bold flex items-center gap-1 cursor-pointer">
+                                        <i class="fa-solid fa-gear"></i> 編輯選項
+                                    </button>
+                                </div>
+                                <select id="hospital" class="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-base focus:ring-2 focus:ring-blue-500 focus:outline-none font-medium">
+                                    <option value="" selected>未填寫 / 請選擇醫院...</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div>
+                            <div class="flex items-center justify-between mb-1">
+                                <label class="block text-xs sm:text-sm font-bold text-slate-800">濫用原因 (選填)</label>
+                                <button type="button" onclick="openOptionEditorModal('abuse')" class="text-xs text-blue-600 hover:text-blue-800 font-bold flex items-center gap-1 cursor-pointer">
+                                    <i class="fa-solid fa-gear"></i> 編輯選項
+                                </button>
+                            </div>
+                            <select id="abuseReason" class="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-base focus:ring-2 focus:ring-blue-500 focus:outline-none font-medium">
+                                <option value="" selected>未填寫 / 請選擇原因...</option>
+                            </select>
+                        </div>
+
+                        <div>
+                            <div class="flex items-center justify-between mb-1">
+                                <label class="block text-xs sm:text-sm font-bold text-slate-800">常用備註標籤 (可複選)</label>
+                                <button type="button" onclick="openOptionEditorModal('tag')" class="text-xs text-blue-600 hover:text-blue-800 font-bold flex items-center gap-1 cursor-pointer">
+                                    <i class="fa-solid fa-gear"></i> 編輯標籤
+                                </button>
+                            </div>
+                            <div class="flex flex-wrap gap-1.5 mb-2" id="notesTagContainer"></div>
+                            <input type="text" id="notes" placeholder="可補充現場狀況說明..."
+                                class="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-base focus:ring-2 focus:ring-blue-500 focus:outline-none">
+                        </div>
+
+                        <div class="pt-2">
+                            <button type="button" onclick="doSaveRecord()" class="w-full py-3.5 bg-red-600 hover:bg-red-700 active:bg-red-800 text-white font-black rounded-xl shadow-lg transition flex items-center justify-center gap-2 text-lg sm:text-xl cursor-pointer border-none select-none">
+                                <i class="fa-solid fa-floppy-disk text-xl sm:text-2xl"></i>
+                                <span>儲存本次救護紀錄與個案資料</span>
+                            </button>
+                        </div>
+                    </form>
+                </section>
+            </div>
+
+            <div class="lg:col-span-5 space-y-5">
+                <section class="bg-white rounded-2xl p-4 sm:p-6 border border-slate-200 shadow-xs flex flex-col min-h-[460px]">
+                    <div class="flex items-center justify-between pb-3 mb-3.5 border-b border-slate-100">
+                        <h3 class="font-bold text-slate-900 flex items-center gap-2 text-base sm:text-lg">
+                            <i class="fa-solid fa-clock-rotate-left text-blue-600 text-lg"></i>
+                            過往救護紀錄明細
+                        </h3>
+                        <span id="recordCountBadge" class="text-xs bg-slate-100 text-slate-800 px-2.5 py-1 rounded-full font-extrabold">
+                            0 筆紀錄
+                        </span>
+                    </div>
+
+                    <div id="timelineContainer" class="flex-grow space-y-3 overflow-y-auto max-h-[520px] pr-1">
+                        <div class="text-center py-16 text-slate-400">
+                            <i class="fa-solid fa-file-invoice text-4xl mb-2 text-slate-300"></i>
+                            <p class="text-xs sm:text-sm font-medium">請於上方搜尋或輸入個案資料<br>檢視歷史救護紀錄</p>
+                        </div>
+                    </div>
+                </section>
+            </div>
+
+        </div>
+    </main>
+
+    <div id="optionEditorModal" class="fixed inset-0 bg-navy-950/80 backdrop-blur-md z-50 hidden flex items-center justify-center p-3">
+        <div class="bg-white border border-slate-200 rounded-2xl shadow-2xl max-w-md w-full overflow-hidden text-slate-800">
+            <div class="p-4 bg-slate-900 text-white flex items-center justify-between">
+                <h3 id="optionModalTitle" class="font-bold text-base sm:text-lg flex items-center gap-2">
+                    <i class="fa-solid fa-gear text-blue-400"></i>
+                    編輯選項
+                </h3>
+                <button onclick="closeOptionEditorModal()" class="text-slate-400 hover:text-white p-1 cursor-pointer">
+                    <i class="fa-solid fa-xmark text-lg"></i>
+                </button>
+            </div>
+
+            <div class="p-4 sm:p-5 space-y-3">
+                <div class="flex items-center gap-2">
+                    <input type="text" id="newOptionInput" placeholder="輸入新的選項名稱..." class="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-base focus:ring-2 focus:ring-blue-500 focus:outline-none">
+                    <button type="button" onclick="addNewOptionItem()" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl text-sm transition shrink-0 cursor-pointer">
+                        新增
+                    </button>
+                </div>
+                <div id="optionItemsListContainer" class="space-y-2 max-h-52 overflow-y-auto pr-1"></div>
+            </div>
+
+            <div class="p-3 sm:p-4 bg-slate-100 border-t border-slate-200 flex justify-end">
+                <button onclick="closeOptionEditorModal()" class="px-5 py-2.5 bg-slate-800 hover:bg-slate-900 text-white font-bold rounded-xl text-sm transition cursor-pointer">
+                    完成並儲存
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div id="deleteConfirmModal" class="fixed inset-0 bg-navy-950/80 backdrop-blur-md z-50 hidden flex items-center justify-center p-3">
+        <div class="bg-navy-900 border border-slate-700 rounded-2xl shadow-2xl max-w-sm w-full overflow-hidden text-white">
+            <div class="p-4 bg-red-950/80 border-b border-red-800/60 flex items-center justify-between">
+                <h3 class="font-bold text-red-200 text-base sm:text-lg flex items-center gap-2">
+                    <i class="fa-solid fa-triangle-exclamation text-red-500"></i>
+                    確認刪除個案？
+                </h3>
+                <button onclick="closeDeleteConfirmModal()" class="text-slate-400 hover:text-white p-1 cursor-pointer">
+                    <i class="fa-solid fa-xmark text-lg"></i>
+                </button>
+            </div>
+
+            <div class="p-4 sm:p-5 space-y-3 text-sm sm:text-base">
+                <p class="text-slate-200 font-medium">
+                    您確定要刪除患者 <strong id="deletePatientNameText" class="text-red-400 font-bold underline">--</strong> (<span id="deletePatientIdText" class="font-mono text-blue-300">--</span>) 的完整檔案嗎？
+                </p>
+                <div class="p-3 bg-red-900/30 border border-red-500/30 rounded-xl text-xs text-red-300 font-medium">
+                    ⚠️ 此操作將同時從雲端資料庫抹除該個案基本資料與所有歷史叫車紀錄！
+                </div>
+            </div>
+
+            <div class="p-3.5 bg-navy-950 border-t border-slate-800 flex items-center gap-2.5">
+                <button onclick="closeDeleteConfirmModal()" class="flex-1 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold rounded-xl text-sm transition border border-slate-700 cursor-pointer">
+                    取消
+                </button>
+                <button onclick="executeDeletePatient()" class="flex-1 py-2.5 bg-red-600 hover:bg-red-700 text-white font-bold rounded-xl text-sm transition shadow-md cursor-pointer flex items-center justify-center gap-1.5 border-none">
+                    <i class="fa-solid fa-trash-can"></i>
+                    確認刪除
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div id="photoPreviewModal" class="fixed inset-0 bg-navy-950/80 backdrop-blur-md z-50 hidden flex items-center justify-center p-3">
+        <div class="bg-navy-900 border border-slate-700 rounded-2xl shadow-2xl max-w-md w-full overflow-hidden text-white">
+            <div class="p-4 bg-navy-950 border-b border-slate-800 flex items-center justify-between">
+                <h3 class="font-bold text-white text-base sm:text-lg flex items-center gap-2">
+                    <i class="fa-solid fa-id-card text-blue-400"></i>
+                    患者人像預覽核對模式
+                </h3>
+                <button onclick="closePhotoPreviewModal()" class="text-slate-400 hover:text-white p-1 cursor-pointer">
+                    <i class="fa-solid fa-xmark text-lg"></i>
+                </button>
+            </div>
+
+            <div class="p-4 sm:p-5 flex flex-col items-center space-y-3.5">
+                <div class="w-56 h-72 sm:w-64 sm:h-80 rounded-2xl bg-slate-950 border-2 border-blue-500/80 overflow-hidden shadow-2xl flex items-center justify-center relative">
+                    <img id="previewModalImg" class="w-full h-full object-cover hidden" alt="大圖患者照片">
+                    <div id="previewModalFallback" class="flex flex-col items-center justify-center text-slate-500 gap-2">
+                        <i class="fa-solid fa-user-tie text-5xl"></i>
+                        <span class="text-xs text-slate-400 font-medium">未上傳患者長相相片</span>
+                    </div>
+                </div>
+
+                <div class="w-full bg-slate-800/80 rounded-xl p-3 border border-slate-700 text-center space-y-1">
+                    <div class="text-lg sm:text-xl font-black text-white flex items-center justify-center gap-2">
+                        <span id="previewModalName">--</span>
+                        <span id="previewModalGenderBadge" class="text-xs px-2 py-0.5 bg-blue-600 rounded-md font-bold">--</span>
+                    </div>
+                    <div class="text-sm sm:text-base text-blue-300 font-mono font-bold" id="previewModalId">--</div>
+                    <div class="text-sm text-slate-300" id="previewModalDob">民國生日: --</div>
+                </div>
+            </div>
+
+            <div class="p-3.5 bg-navy-950 border-t border-slate-800 flex items-center gap-2.5">
+                <button onclick="document.getElementById('cardPhotoInput').click(); closePhotoPreviewModal();" class="flex-1 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold rounded-xl text-sm transition flex items-center justify-center gap-1.5 cursor-pointer border border-slate-700">
+                    <i class="fa-solid fa-camera"></i> 更換照片
+                </button>
+                <button onclick="closePhotoPreviewModal()" class="flex-1 py-2.5 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl text-sm transition flex items-center justify-center gap-1.5 cursor-pointer border-none shadow-md">
+                    <i class="fa-solid fa-check"></i> 確認無誤
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div id="toast" class="fixed bottom-4 right-4 bg-navy-900 text-white px-4 py-3 rounded-xl shadow-2xl z-50 hidden transition-all flex items-center gap-2.5 text-sm sm:text-base font-medium border border-slate-700">
+        <i id="toastIcon" class="fa-solid fa-circle-check text-emerald-400 text-lg"></i>
+        <span id="toastMsg">操作成功</span>
+    </div>
+
+    <script>
+        // Updated Google Apps Script API endpoint
+        const GAS_API_URL = "https://script.google.com/macros/s/AKfycby9fK2JxDLKr1jDgvPW_aAc4X8z6k8WpcY6iw4RInnbbvychh4wpbLGslRBaI2XrgnV1g/exec";
+
+        let cloudPatientsMap = {};
+        let cloudRecordsList = [];
+        let currentActivePatientId = 'A123456789';
+        let currentPatientPhotoBase64 = '';
+
+        let systemOptions = {
+            hospitals: ['新樓醫院', '市立醫院', '台南榮總', '成大醫院', '現場拒送 / 未送醫'],
+            abuses: ['酒醉路倒', 'Psy', '重複叫車', '其他'],
+            tags: ['常客', '酒醉發瘋', '拒簽身分證明', '情緒不穩定', '搭車需求強烈']
+        };
+        let currentEditingOptionType = null;
+
+        const SAMPLE_AVATAR_MALE = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='200' height='260' viewBox='0 0 200 260'><rect width='100%' height='100%' fill='%231e293b'/><circle cx='100' cy='90' r='45' fill='%2338bdf8'/><path d='M30 220 C30 150, 170 150, 170 220 Z' fill='%230284c7'/><text x='100' y='245' font-family='sans-serif' font-size='14' font-weight='bold' fill='%2394a3b8' text-anchor='middle'>男患者範例</text></svg>";
+        const SAMPLE_AVATAR_FEMALE = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='200' height='260' viewBox='0 0 200 260'><rect width='100%' height='100%' fill='%231e293b'/><circle cx='100' cy='90' r='45' fill='%23f472b6'/><path d='M30 220 C30 150, 170 150, 170 220 Z' fill='%23db2777'/><text x='100' y='245' font-family='sans-serif' font-size='14' font-weight='bold' fill='%2394a3b8' text-anchor='middle'>女患者範例</text></svg>";
+
+        window.onload = async function() {
+            const now = new Date();
+            now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+            const useTimeEl = document.getElementById('useTime');
+            if (useTimeEl && !useTimeEl.value) {
+                useTimeEl.value = now.toISOString().slice(0,16);
+            }
+
+            await loadDataFromGAS();
+            setInterval(loadDataFromGAS, 15000); // Poll Google Sheets every 15s for live cross-device sync
+        };
+
+        async function loadDataFromGAS() {
+            try {
+                document.getElementById('cloudStatusDot').className = 'w-2 h-2 rounded-full bg-amber-400 animate-pulse';
+                document.getElementById('cloudStatusText').innerText = '正在同步 Google 雲端...';
+
+                const response = await fetch(GAS_API_URL);
+                if (!response.ok) throw new Error("Network response failed");
+                const result = await response.json();
+
+                // If GAS returns standard array or object format
+                if (Array.isArray(result)) {
+                    // Map legacy array rows into records
+                    cloudRecordsList = result.map(item => ({
+                        id: item.身分證字號 || item.id || 'A123456789',
+                        name: item.姓名 || item.name || '未命名',
+                        gender: item.性別 || item.gender || '男',
+                        dob: item.民國生日 || item.birth || '',
+                        hospital: item.送往醫院 || item.hospital || '',
+                        abuseReason: item.濫用原因 || item.reason || '',
+                        notes: item.詳細說明內容 || item.content || item.tags || '',
+                        useTime: item.時間 || item.time || new Date().toISOString().slice(0,16)
+                    }));
+                    // Reconstruct patients map
+                    cloudPatientsMap = {};
+                    cloudRecordsList.forEach(r => {
+                        if (r.id && !cloudPatientsMap[r.id]) {
+                            cloudPatientsMap[r.id] = { name: r.name, gender: r.gender, dob: r.dob, photo: r.gender === '女' ? SAMPLE_AVATAR_FEMALE : SAMPLE_AVATAR_MALE };
+                        }
+                    });
+                } else if (result && result.status === 'success') {
+                    if (result.patients && typeof result.patients === 'object') {
+                        cloudPatientsMap = result.patients;
+                    }
+                    if (Array.isArray(result.records)) {
+                        cloudRecordsList = result.records;
+                    }
+                    if (result.options && typeof result.options === 'object') {
+                        systemOptions = result.options;
+                    }
+                }
+
+                if (Object.keys(cloudPatientsMap).length === 0) {
+                    cloudPatientsMap = {
+                        'A123456789': { name: '陳大明', gender: '男', dob: '480312', photo: SAMPLE_AVATAR_MALE },
+                        'B223456789': { name: '林淑芬', gender: '女', dob: '621105', photo: SAMPLE_AVATAR_FEMALE }
+                    };
+                }
+
+                document.getElementById('cloudStatusDot').className = 'w-2 h-2 rounded-full bg-emerald-400';
+                document.getElementById('cloudStatusText').innerText = 'Google 雲端同步就緒';
+            } catch (err) {
+                console.warn('GAS fetch fallback:', err);
+                document.getElementById('cloudStatusDot').className = 'w-2 h-2 rounded-full bg-amber-400';
+                document.getElementById('cloudStatusText').innerText = '本機快取模式';
+                loadLocalStorageFallback();
+            }
+            renderDropdownOptions();
+            refreshSystemUI(currentActivePatientId);
+        }
+
+        async function saveAllToGAS() {
+            try {
+                document.getElementById('cloudStatusDot').className = 'w-2 h-2 rounded-full bg-amber-400 animate-pulse';
+                document.getElementById('cloudStatusText').innerText = '正在寫入 Google 雲端...';
+
+                const payload = {
+                    patients: cloudPatientsMap,
+                    records: cloudRecordsList,
+                    options: systemOptions
+                };
+
+                await fetch(GAS_API_URL, {
+                    method: 'POST',
+                    mode: 'no-cors',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                document.getElementById('cloudStatusDot').className = 'w-2 h-2 rounded-full bg-emerald-400';
+                document.getElementById('cloudStatusText').innerText = 'Google 雲端同步就緒';
+            } catch(e) {
+                console.error("GAS save error:", e);
+                localStorage.setItem('ems_patients', JSON.stringify(cloudPatientsMap));
+                localStorage.setItem('ems_records', JSON.stringify(cloudRecordsList));
+                localStorage.setItem('ems_options', JSON.stringify(systemOptions));
+            }
+        }
+
+        function loadLocalStorageFallback() {
+            try {
+                const localPat = localStorage.getItem('ems_patients');
+                const localRec = localStorage.getItem('ems_records');
+                const localOpt = localStorage.getItem('ems_options');
+                cloudPatientsMap = localPat ? JSON.parse(localPat) : {
+                    'A123456789': { name: '陳大明', gender: '男', dob: '480312', photo: SAMPLE_AVATAR_MALE }
+                };
+                cloudRecordsList = localRec ? JSON.parse(localRec) : [];
+                if (localOpt) systemOptions = JSON.parse(localOpt);
+            } catch(e) {
+                cloudPatientsMap = { 'A123456789': { name: '陳大明', gender: '男', dob: '480312', photo: SAMPLE_AVATAR_MALE } };
+                cloudRecordsList = [];
+            }
+            renderDropdownOptions();
+            refreshSystemUI(currentActivePatientId);
+        }
+
+        function renderDropdownOptions() {
+            const hospitalSelect = document.getElementById('hospital');
+            const curHospitalVal = hospitalSelect.value;
+            let hHtml = '<option value="">未填寫 / 請選擇醫院...</option>';
+            systemOptions.hospitals.forEach(h => {
+                hHtml += `<option value="${h}">${h}</option>`;
+            });
+            hospitalSelect.innerHTML = hHtml;
+            hospitalSelect.value = curHospitalVal;
+
+            const abuseSelect = document.getElementById('abuseReason');
+            const curAbuseVal = abuseSelect.value;
+            let aHtml = '<option value="">未填寫 / 請選擇原因...</option>';
+            systemOptions.abuses.forEach(a => {
+                aHtml += `<option value="${a}">${a}</option>`;
+            });
+            abuseSelect.innerHTML = aHtml;
+            abuseSelect.value = curAbuseVal;
+
+            const tagContainer = document.getElementById('notesTagContainer');
+            let tHtml = '';
+            systemOptions.tags.forEach(t => {
+                tHtml += `<button type="button" onclick="toggleNoteTag(this, '${t}')" class="note-tag-btn px-3.5 py-2 text-xs sm:text-sm rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700 font-medium transition cursor-pointer">+ ${t}</button>`;
+            });
+            tagContainer.innerHTML = tHtml;
+        }
+
+        window.openOptionEditorModal = function(type) {
+            currentEditingOptionType = type;
+            const modal = document.getElementById('optionEditorModal');
+            const titleEl = document.getElementById('optionModalTitle');
+            const inputEl = document.getElementById('newOptionInput');
+            inputEl.value = '';
+
+            if (type === 'hospital') titleEl.innerHTML = '<i class="fa-solid fa-hospital text-blue-500"></i> 編輯送往醫院選項';
+            else if (type === 'abuse') titleEl.innerHTML = '<i class="fa-solid fa-triangle-exclamation text-amber-500"></i> 編輯濫用原因選項';
+            else if (type === 'tag') titleEl.innerHTML = '<i class="fa-solid fa-tags text-emerald-500"></i> 編輯常用備註標籤';
+
+            renderOptionModalList();
+            modal.classList.remove('hidden');
+        };
+
+        window.closeOptionEditorModal = function() {
+            document.getElementById('optionEditorModal').classList.add('hidden');
+            renderDropdownOptions();
+            saveAllToGAS();
+        };
+
+        function renderOptionModalList() {
+            const container = document.getElementById('optionItemsListContainer');
+            let items = [];
+            if (currentEditingOptionType === 'hospital') items = systemOptions.hospitals;
+            else if (currentEditingOptionType === 'abuse') items = systemOptions.abuses;
+            else if (currentEditingOptionType === 'tag') items = systemOptions.tags;
+
+            let html = '';
+            items.forEach((item, idx) => {
+                html += `
+                    <div class="flex items-center justify-between p-2 bg-white rounded-lg border border-slate-100 text-sm sm:text-base">
+                        <span class="font-medium text-slate-800">${item}</span>
+                        <button type="button" onclick="removeOptionItem(${idx})" class="text-red-500 hover:text-red-700 p-1.5 cursor-pointer rounded-lg hover:bg-red-50 transition">
+                            <i class="fa-solid fa-trash-can"></i>
+                        </button>
+                    </div>
+                `;
+            });
+            container.innerHTML = html;
+        }
+
+        window.addNewOptionItem = function() {
+            const inputEl = document.getElementById('newOptionInput');
+            const val = inputEl.value.trim();
+            if (!val) { showToast('請輸入項目名稱', 'warning'); return; }
+
+            if (currentEditingOptionType === 'hospital') {
+                if (!systemOptions.hospitals.includes(val)) systemOptions.hospitals.push(val);
+            } else if (currentEditingOptionType === 'abuse') {
+                if (!systemOptions.abuses.includes(val)) systemOptions.abuses.push(val);
+            } else if (currentEditingOptionType === 'tag') {
+                if (!systemOptions.tags.includes(val)) systemOptions.tags.push(val);
+            }
+
+            inputEl.value = '';
+            renderOptionModalList();
+            showToast(`已新增「${val}」`);
+        };
+
+        window.removeOptionItem = function(idx) {
+            if (currentEditingOptionType === 'hospital') systemOptions.hospitals.splice(idx, 1);
+            else if (currentEditingOptionType === 'abuse') systemOptions.abuses.splice(idx, 1);
+            else if (currentEditingOptionType === 'tag') systemOptions.tags.splice(idx, 1);
+            renderOptionModalList();
+            showToast('已刪除項目');
+        };
+
+        window.onCardDataChange = function() {
+            const idVal = document.getElementById('cardPatientId').value.trim().toUpperCase();
+            if (idVal) {
+                const matchedRecords = cloudRecordsList.filter(r => r.id === idVal);
+                renderFrequentAlertBanner(idVal, matchedRecords, !cloudPatientsMap[idVal]);
+            }
+        };
+
+        window.confirmDeletePatient = function() {
+            const curId = document.getElementById('cardPatientId').value.trim().toUpperCase();
+            if (!curId) { showToast('請先選擇欲刪除個案！', 'warning'); return; }
+            const p = cloudPatientsMap[curId];
+            const pName = p ? p.name : (document.getElementById('cardPatientName').value || '此個案');
+            document.getElementById('deletePatientNameText').innerText = pName;
+            document.getElementById('deletePatientIdText').innerText = curId;
+            document.getElementById('deleteConfirmModal').classList.remove('hidden');
+        };
+
+        window.updatePatientProfileData = async function() {
+            const curId = document.getElementById('cardPatientId').value.trim().toUpperCase();
+            if (!curId) { showToast('請先輸入或選擇有效個案身分證號！', 'warning'); return; }
+            const pName = document.getElementById('cardPatientName').value.trim() || '未命名個案';
+            const pGender = document.getElementById('cardPatientGender').value;
+            const pDob = document.getElementById('cardPatientDob').value.trim();
+
+            if (!cloudPatientsMap[curId]) {
+                cloudPatientsMap[curId] = {};
+            }
+            cloudPatientsMap[curId].name = pName;
+            cloudPatientsMap[curId].gender = pGender;
+            cloudPatientsMap[curId].dob = pDob;
+            if (currentPatientPhotoBase64) {
+                cloudPatientsMap[curId].photo = currentPatientPhotoBase64;
+            } else if (!cloudPatientsMap[curId].photo) {
+                cloudPatientsMap[curId].photo = (pGender === '女' ? SAMPLE_AVATAR_FEMALE : SAMPLE_AVATAR_MALE);
+            }
+
+            cloudRecordsList.forEach(r => {
+                if (r.id === curId) {
+                    r.name = pName;
+                    r.gender = pGender;
+                    r.dob = pDob;
+                }
+            });
+
+            await saveAllToGAS();
+            refreshSystemUI(curId);
+            showToast(`已成功修改並儲存 ${pName} (${curId}) 個案資料！`);
+        };
+
+        window.closeDeleteConfirmModal = function() {
+            document.getElementById('deleteConfirmModal').classList.add('hidden');
+        };
+
+        window.executeDeletePatient = async function() {
+            const targetId = document.getElementById('cardPatientId').value.trim().toUpperCase();
+            if (!targetId) return;
+            try {
+                delete cloudPatientsMap[targetId];
+                cloudRecordsList = cloudRecordsList.filter(r => r.id !== targetId);
+
+                await saveAllToGAS();
+
+                closeDeleteConfirmModal();
+                showToast(`已成功刪除個案 (${targetId})`);
+                const remainingIds = Object.keys(cloudPatientsMap);
+                if (remainingIds.length > 0) {
+                    clearPatientSelectInput();
+                    refreshSystemUI(remainingIds[0]);
+                } else {
+                    clearPatientSelectInput();
+                    document.getElementById('cardPatientId').value = '';
+                    document.getElementById('cardPatientName').value = '新個案';
+                    document.getElementById('cardPatientDob').value = '';
+                    currentPatientPhotoBase64 = '';
+                    refreshSystemUI('');
+                }
+            } catch (err) {
+                console.error("Delete error:", err);
+                showToast('刪除失敗，請重試', 'warning');
+            }
+        };
+
+        window.onCardIdInput = function(val) { window.onCardDataChange(); };
+
+        function refreshSystemUI(targetId) {
+            currentActivePatientId = targetId ? targetId.toUpperCase() : '';
+            let patientInfo = cloudPatientsMap[currentActivePatientId];
+            const matchedRecords = cloudRecordsList.filter(r => r.id === currentActivePatientId);
+            matchedRecords.sort((a,b) => new Date(b.useTime || 0) - new Date(a.useTime || 0));
+
+            const nameInput = document.getElementById('cardPatientName');
+            const idInput = document.getElementById('cardPatientId');
+            const genderSelect = document.getElementById('cardPatientGender');
+            const dobInput = document.getElementById('cardPatientDob');
+            const newBadge = document.getElementById('newPatientBadge');
+
+            if (patientInfo) {
+                nameInput.value = patientInfo.name || '';
+                idInput.value = currentActivePatientId;
+                genderSelect.value = patientInfo.gender || '男';
+                dobInput.value = patientInfo.dob || '';
+                currentPatientPhotoBase64 = patientInfo.photo || '';
+                if (newBadge) newBadge.classList.add('hidden');
+            } else {
+                idInput.value = currentActivePatientId;
+                if (!nameInput.value || nameInput.value === '新個案') {
+                    nameInput.value = targetId.length >= 2 ? targetId : '新個案';
+                }
+                if (newBadge) newBadge.classList.remove('hidden');
+            }
+
+            updateCardPhotoDisplay(currentPatientPhotoBase64);
+            document.getElementById('topStatCount').innerText = `${matchedRecords.length} 次`;
+            renderFrequentAlertBanner(currentActivePatientId, matchedRecords, !patientInfo);
+            renderTimeline(matchedRecords);
+        }
+
+        function renderFrequentAlertBanner(id, matchedRecords, isNewPatient) {
+            const inlineAlert = document.getElementById('cardInlineAlertContainer');
+            if (!inlineAlert) return;
+            inlineAlert.classList.remove('hidden');
+            const totalCount = matchedRecords.length;
+
+            if (totalCount >= 3) {
+                inlineAlert.className = "bg-red-950/90 border border-red-500 rounded-xl p-2.5 text-red-100 shadow-md";
+                inlineAlert.innerHTML = `
+                    <div class="flex items-center justify-between gap-2 text-xs sm:text-sm">
+                        <div class="flex items-center gap-1.5">
+                            <span class="px-2 py-0.5 bg-red-600 text-white font-black rounded flex items-center gap-1 shrink-0">
+                                <i class="fa-solid fa-triangle-exclamation animate-bounce"></i> 紅燈警示
+                            </span>
+                            <span class="text-red-200 font-bold">歷史叫車 <strong class="text-red-400 underline">${totalCount}</strong> 次</span>
+                        </div>
+                        <span class="text-red-300 font-bold shrink-0">高頻利用個案</span>
+                    </div>
+                `;
+            } else if (totalCount >= 1) {
+                inlineAlert.className = "bg-amber-950/90 border border-amber-500 rounded-xl p-2.5 text-amber-100 shadow-md";
+                inlineAlert.innerHTML = `
+                    <div class="flex items-center justify-between gap-2 text-xs sm:text-sm">
+                        <div class="flex items-center gap-1.5">
+                            <span class="px-2 py-0.5 bg-amber-500 text-white font-bold rounded flex items-center gap-1 shrink-0">
+                                <i class="fa-solid fa-circle-info"></i> 黃燈預警
+                            </span>
+                            <span class="text-amber-200 font-bold">歷史叫車 <strong class="text-amber-300">${totalCount}</strong> 次</span>
+                        </div>
+                        <span class="text-amber-300 font-bold shrink-0">一般關注個案</span>
+                    </div>
+                `;
+            } else {
+                inlineAlert.className = "bg-emerald-950/70 border border-emerald-500/80 rounded-xl p-2.5 text-emerald-100 shadow-xs";
+                inlineAlert.innerHTML = `
+                    <div class="flex items-center justify-between gap-2 text-xs sm:text-sm">
+                        <div class="flex items-center gap-1.5">
+                            <span class="px-2 py-0.5 bg-emerald-600 text-white font-bold rounded flex items-center gap-1 shrink-0">
+                                <i class="fa-solid fa-circle-check"></i> ${isNewPatient ? '新個案建檔' : '綠燈 (正常)'}
+                            </span>
+                            <span class="text-emerald-200 font-medium">累計叫車 ${totalCount} 次</span>
+                        </div>
+                    </div>
+                `;
+            }
+        }
+
+        function renderTimeline(matchedRecords) {
+            const container = document.getElementById('timelineContainer');
+            const badge = document.getElementById('recordCountBadge');
+            badge.innerText = `${matchedRecords.length} 筆紀錄`;
+
+            if (matchedRecords.length === 0) {
+                container.innerHTML = `
+                    <div class="text-center py-16 text-slate-400">
+                        <i class="fa-solid fa-file-invoice text-4xl mb-2 text-slate-300"></i>
+                        <p class="text-xs sm:text-sm font-medium">此個案尚無歷史救護紀錄<br>可於左側填寫並儲存本次案件</p>
+                    </div>
+                `;
+                return;
+            }
+
+            let html = '';
+            matchedRecords.forEach((r, idx) => {
+                html += `
+                    <div class="p-3.5 bg-slate-50 border border-slate-200 rounded-xl space-y-1.5 hover:border-blue-300 transition shadow-2xs text-xs sm:text-sm">
+                        <div class="flex items-center justify-between">
+                            <span class="font-bold text-slate-900 flex items-center gap-1.5">
+                                <i class="fa-solid fa-calendar-days text-blue-600"></i>
+                                ${r.useTime ? r.useTime.replace('T', ' ') : '時間未填'}
+                            </span>
+                            <span class="px-2 py-0.5 bg-red-100 text-red-700 font-extrabold rounded text-[11px]">
+                                #${matchedRecords.length - idx}
+                            </span>
+                        </div>
+                        <div class="grid grid-cols-2 gap-2 text-slate-600">
+                            <div><strong class="text-slate-700">醫院：</strong>${r.hospital || '未填寫'}</div>
+                            <div><strong class="text-slate-700">原因：</strong>${r.abuseReason || '未填寫'}</div>
+                        </div>
+                        ${r.notes ? `<div class="text-slate-500 bg-white p-2 rounded-lg border border-slate-100"><strong class="text-slate-700">備註：</strong>${r.notes}</div>` : ''}
+                    </div>
+                `;
+            });
+            container.innerHTML = html;
+        }
+
+        function updateCardPhotoDisplay(photoSrc) {
+            const imgEl = document.getElementById('topPhotoImg');
+            const fallbackEl = document.getElementById('topPhotoIconFallback');
+            if (photoSrc && photoSrc.length > 20) {
+                imgEl.src = photoSrc;
+                imgEl.classList.remove('hidden');
+                fallbackEl.classList.add('hidden');
+            } else {
+                imgEl.classList.add('hidden');
+                fallbackEl.classList.remove('hidden');
+            }
+        }
+
+        window.openPhotoPreviewModal = function() {
+            const modal = document.getElementById('photoPreviewModal');
+            const imgEl = document.getElementById('previewModalImg');
+            const fallbackEl = document.getElementById('previewModalFallback');
+            const name = document.getElementById('cardPatientName').value || '未知患者';
+            const id = document.getElementById('cardPatientId').value || '--';
+            const gender = document.getElementById('cardPatientGender').value || '男';
+            const dob = document.getElementById('cardPatientDob').value || '未填寫';
+
+            document.getElementById('previewModalName').innerText = name;
+            document.getElementById('previewModalId').innerText = id;
+            document.getElementById('previewModalGenderBadge').innerText = gender;
+            document.getElementById('previewModalDob').innerText = `民國生日: ${dob}`;
+
+            if (currentPatientPhotoBase64 && currentPatientPhotoBase64.length > 20) {
+                imgEl.src = currentPatientPhotoBase64;
+                imgEl.classList.remove('hidden');
+                fallbackEl.classList.add('hidden');
+            } else {
+                imgEl.classList.add('hidden');
+                fallbackEl.classList.remove('hidden');
+            }
+            modal.classList.remove('hidden');
+        };
+
+        window.closePhotoPreviewModal = function() {
+            document.getElementById('photoPreviewModal').classList.add('hidden');
+        };
+
+        window.previewCardPhoto = function(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                currentPatientPhotoBase64 = e.target.result;
+                updateCardPhotoDisplay(currentPatientPhotoBase64);
+                showToast('已更新患者相片');
+            };
+            reader.readAsDataURL(file);
+        };
+
+        window.showPatientDropdown = function() {
+            handlePatientDropdownSearch(document.getElementById('patientSelectInput').value);
+        };
+
+        window.handlePatientDropdownSearch = function(query) {
+            const listContainer = document.getElementById('patientDropdownList');
+            const clearBtn = document.getElementById('clearSelectBtn');
+            const trimmed = query.trim();
+            const upper = trimmed.toUpperCase();
+
+            if (trimmed.length > 0) clearBtn.classList.remove('hidden');
+            else clearBtn.classList.add('hidden');
+
+            const matches = [];
+            for (let id in cloudPatientsMap) {
+                const p = cloudPatientsMap[id];
+                if (id.toUpperCase().includes(upper) || (p.name && p.name.includes(trimmed))) {
+                    matches.push({ id, ...p });
+                }
+            }
+
+            listContainer.classList.remove('hidden');
+            let html = '';
+            matches.forEach(p => {
+                html += `
+                    <div onclick="selectPatientFromDropdown('${p.id}')" class="p-3 hover:bg-slate-700 active:bg-slate-700 cursor-pointer transition flex items-center justify-between text-sm sm:text-base border-b border-slate-700/50">
+                        <div class="font-bold text-white flex items-center gap-2">
+                            <i class="fa-solid fa-user text-blue-400"></i>
+                            <span>${p.name}</span>
+                            <span class="font-mono text-slate-400 text-xs">(${p.id})</span>
+                        </div>
+                        <span class="text-slate-400 text-xs">生日 ${p.dob || '未填'}</span>
+                    </div>
+                `;
+            });
+
+            if (trimmed.length >= 1) {
+                html += `
+                    <div onclick="createNewPatientWithQuery('${trimmed.replace(/'/g, "\\'")}')" class="p-3 bg-emerald-950/90 hover:bg-emerald-900 border-t border-emerald-800/60 cursor-pointer transition flex items-center justify-between text-sm font-bold text-emerald-300">
+                        <span class="flex items-center gap-2"><i class="fa-solid fa-user-plus"></i> 新增個案 「${trimmed}」</span>
+                        <i class="fa-solid fa-chevron-right text-xs"></i>
+                    </div>
+                `;
+            } else if (matches.length === 0) {
+                html = `<div class="p-3 text-sm text-slate-400 text-center">請輸入身分證號或姓名搜尋</div>`;
+            }
+
+            listContainer.innerHTML = html;
+        };
+
+        window.createNewPatientWithQuery = function(queryStr) {
+            document.getElementById('patientDropdownList').classList.add('hidden');
+            let idVal = queryStr.toUpperCase();
+            let nameVal = (/^[A-Z][12]\d{8}$/.test(idVal)) ? '新個案' : queryStr;
+
+            document.getElementById('cardPatientId').value = idVal;
+            document.getElementById('cardPatientName').value = nameVal;
+            document.getElementById('cardPatientGender').value = '男';
+            document.getElementById('cardPatientDob').value = '';
+            currentPatientPhotoBase64 = '';
+
+            document.getElementById('patientSelectInput').value = `${idVal} - ${nameVal}`;
+            refreshSystemUI(idVal);
+            showToast('已帶入新個案，請確認或調整後儲存', 'success');
+        };
+
+        window.selectPatientFromDropdown = function(id) {
+            document.getElementById('patientDropdownList').classList.add('hidden');
+            const p = cloudPatientsMap[id];
+            if (p) document.getElementById('patientSelectInput').value = `${id} - ${p.name}`;
+            refreshSystemUI(id);
+        };
+
+        window.clearPatientSelectInput = function() {
+            document.getElementById('patientSelectInput').value = '';
+            document.getElementById('clearSelectBtn').classList.add('hidden');
+            document.getElementById('patientDropdownList').classList.add('hidden');
+        };
+
+        window.toggleNoteTag = function(btn, tagText) {
+            btn.classList.toggle('tag-btn-selected');
+            const notesInput = document.getElementById('notes');
+            let currentNotes = notesInput.value.trim();
+            if (btn.classList.contains('tag-btn-selected')) {
+                notesInput.value = currentNotes ? `${currentNotes}, ${tagText}` : tagText;
+            } else {
+                notesInput.value = currentNotes.replace(new RegExp(`(^|,\\s*)${tagText}(,|$)`), '$2').replace(/^,\s*/, '').trim();
+            }
+        };
+
+        window.doSaveRecord = async function() {
+            if (document.activeElement && typeof document.activeElement.blur === 'function') {
+                document.activeElement.blur();
+            }
+
+            try {
+                const idEl = document.getElementById('cardPatientId');
+                const nameEl = document.getElementById('cardPatientName');
+                const genderEl = document.getElementById('cardPatientGender');
+                const dobEl = document.getElementById('cardPatientDob');
+                const timeEl = document.getElementById('useTime');
+                const hospitalEl = document.getElementById('hospital');
+                const abuseEl = document.getElementById('abuseReason');
+                const notesEl = document.getElementById('notes');
+
+                let pId = (idEl ? idEl.value : '').trim().toUpperCase();
+                let pName = (nameEl ? nameEl.value : '').trim();
+                const pGender = genderEl ? genderEl.value : '男';
+                const pDob = (dobEl ? dobEl.value : '').trim();
+                const useTime = timeEl ? timeEl.value : '';
+                const hospital = hospitalEl ? hospitalEl.value : '';
+                const abuseReason = abuseEl ? abuseEl.value : '';
+                const notes = (notesEl ? notesEl.value : '').trim();
+
+                if (!pId) {
+                    pId = "TEMP" + Date.now().toString().slice(-6);
+                    if (idEl) idEl.value = pId;
+                }
+                if (!pName) {
+                    pName = "未知患者-" + pId.slice(-4);
+                    if (nameEl) nameEl.value = pName;
+                }
+                if (!useTime) {
+                    showToast('請選擇出勤日期時間！', 'warning');
+                    return;
+                }
+
+                const patientData = {
+                    name: pName,
+                    gender: pGender,
+                    dob: pDob,
+                    photo: currentPatientPhotoBase64 || (pGender === '女' ? SAMPLE_AVATAR_FEMALE : SAMPLE_AVATAR_MALE)
+                };
+
+                cloudPatientsMap[pId] = patientData;
+                const newRecord = {
+                    id: pId,
+                    name: pName,
+                    gender: pGender,
+                    dob: pDob,
+                    photo: patientData.photo,
+                    useTime: useTime,
+                    hospital: hospital,
+                    abuseReason: abuseReason,
+                    notes: notes,
+                    createdAt: new Date().toISOString()
+                };
+                cloudRecordsList.unshift(newRecord);
+
+                await saveAllToGAS();
+
+                document.getElementById('patientSelectInput').value = `${pId} - ${pName}`;
+                refreshSystemUI(pId);
+                showToast(`成功同步儲存 ${pName} (${pId}) 紀錄！`);
+            } catch (err) {
+                console.error('儲存失敗:', err);
+                showToast('儲存發生錯誤，請重試', 'warning');
+            }
+        };
+
+        window.processOcrImage = function(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const ocrStatus = document.getElementById('ocrStatus');
+            const ocrStatusText = document.getElementById('ocrStatusText');
+            ocrStatus.classList.remove('hidden');
+            ocrStatusText.innerText = '正在進行證件智慧辨識 (OCR)...';
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const img = new Image();
+                img.onload = function() {
+                    const canvas = document.getElementById('preprocessCanvas');
+                    const ctx = canvas.getContext('2d');
+                    canvas.width = img.width;
+                    canvas.height = img.height;
+                    ctx.drawImage(img, 0, 0);
+
+                    Tesseract.recognize(canvas, 'eng+chi_tra', {
+                        logger: m => {
+                            if (m.status === 'recognizing text') {
+                                ocrStatusText.innerText = `辨識中... (${Math.round(m.progress * 100)}%)`;
+                            }
+                        }
+                    }).then(({ data: { text } }) => {
+                        ocrStatus.classList.add('hidden');
+                        parseOcrResult(text, e.target.result);
+                    }).catch(err => {
+                        console.error(err);
+                        ocrStatus.classList.add('hidden');
+                        showToast('證件辨識失敗，請手動輸入', 'warning');
+                    });
+                };
+                img.src = e.target.result;
+            };
+            reader.readAsDataURL(file);
+        };
+
+        function parseOcrResult(rawText, photoBase64) {
+            const clean = rawText.replace(/\s+/g, '');
+            const idMatch = clean.match(/[A-Z0-9]{8,10}/);
+            const foundId = idMatch ? idMatch[0] : ("ID" + Math.floor(100000 + Math.random() * 900000));
+
+            let foundName = '新個案';
+            const nameKeywords = ['姓名', '名'];
+            for (let kw of nameKeywords) {
+                let idx = clean.indexOf(kw);
+                if (idx !== -1 && idx + 3 < clean.length) {
+                    foundName = clean.substring(idx + kw.length, idx + kw.length + 3).replace(/[^一-龥]/g, '');
+                    if (foundName.length >= 2) break;
+                }
+            }
+            if (!foundName || foundName.length < 2) foundName = '新個案';
+
+            currentPatientPhotoBase64 = photoBase64;
+            document.getElementById('cardPatientId').value = foundId;
+            document.getElementById('cardPatientName').value = foundName;
+            document.getElementById('cardPatientGender').value = '男';
+            document.getElementById('cardPatientDob').value = '';
+            document.getElementById('patientSelectInput').value = `${foundId} - ${foundName}`;
+
+            updateCardPhotoDisplay(currentPatientPhotoBase64);
+            refreshSystemUI(foundId);
+            showToast('已成功掃描證件並匯入，請核對後儲存', 'success');
+        }
+
+        window.exportData = function(format) {
+            if (cloudRecordsList.length === 0) {
+                showToast('目前無任何紀錄可供匯出', 'warning');
+                return;
+            }
+            let csv = '\uFEFF出勤時間,身分證號,姓名,性別,民國生日,送往醫院,濫用原因,備註\n';
+            cloudRecordsList.forEach(r => {
+                csv += `"${r.useTime || ''}","${r.id || ''}","${r.name || ''}","${r.gender || ''}","${r.dob || ''}","${r.hospital || ''}","${r.abuseReason || ''}","${r.notes || ''}"\n`;
+            });
+            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `EMS_Records_${new Date().toISOString().slice(0,10)}.csv`;
+            a.click();
+            showToast('CSV 報表匯出成功！');
+        };
+
+        function showToast(msg, type='success') {
+            const toast = document.getElementById('toast');
+            if (!toast) return;
+            const toastMsg = document.getElementById('toastMsg');
+            const toastIcon = document.getElementById('toastIcon');
+            if (toastMsg) toastMsg.innerText = msg;
+            if (toastIcon) {
+                if (type === 'warning') toastIcon.className = 'fa-solid fa-triangle-exclamation text-amber-400 text-lg';
+                else toastIcon.className = 'fa-solid fa-circle-check text-emerald-400 text-lg';
+            }
+            toast.classList.remove('hidden');
+            setTimeout(() => { toast.classList.add('hidden'); }, 3500);
+        }
+
+        document.addEventListener('click', function(e) {
+            const dropdown = document.getElementById('patientDropdownList');
+            const selectContainer = document.getElementById('patientSelectInput');
+            if (dropdown && !dropdown.contains(e.target) && e.target !== selectContainer) {
+                dropdown.classList.add('hidden');
+            }
+        });
+    </script>
+</body>
+</html>
